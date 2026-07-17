@@ -31,6 +31,14 @@ Future<void> main() async {
     await database.close();
   });
 
+  // Drift, StreamBuilder aboneliği kapanırken sıfır süreli bir Timer
+  // zamanlar; testin bekleyen timer kontrolüne takılmaması için ağaç
+  // söküldükten sonra bir kare daha pump edilir.
+  Future<void> agaciSok(WidgetTester tester) async {
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  }
+
   Future<CardItem> kartEkle({String bankaAdi = 'Test Bankası'}) async {
     final id = await database.insertCard(
       CardsCompanion.insert(
@@ -59,7 +67,7 @@ Future<void> main() async {
       expect(find.text('Henüz kart veya abonelik eklenmedi'), findsOneWidget);
       expect(find.text('Ekle'), findsOneWidget);
 
-      await tester.pumpWidget(const SizedBox.shrink());
+      await agaciSok(tester);
     });
 
     testWidgets('kart varken özet kartı ve ekstre listesi görünür', (
@@ -80,7 +88,7 @@ Future<void> main() async {
       expect(find.text('Yaklaşan Ekstreler'), findsOneWidget);
       expect(find.text('Garanti'), findsOneWidget);
 
-      await tester.pumpWidget(const SizedBox.shrink());
+      await agaciSok(tester);
     });
   });
 
@@ -105,7 +113,7 @@ Future<void> main() async {
       expect(find.text('Banka adı boş bırakılamaz'), findsOneWidget);
       expect(find.text('Bu alan boş bırakılamaz'), findsWidgets);
 
-      await tester.pumpWidget(const SizedBox.shrink());
+      await agaciSok(tester);
     });
 
     testWidgets('geçerli form kaydedilince kart veritabanına yazılır', (
@@ -138,7 +146,7 @@ Future<void> main() async {
       expect(cards.single.bankaAdi, 'İş Bankası');
       expect(cards.single.kesimGunu, 18);
 
-      await tester.pumpWidget(const SizedBox.shrink());
+      await agaciSok(tester);
     });
 
     testWidgets('geçersiz gün değeri hata mesajı üretir', (tester) async {
@@ -154,7 +162,7 @@ Future<void> main() async {
 
       expect(find.text('Gün 1 ile 31 arasında olmalı'), findsOneWidget);
 
-      await tester.pumpWidget(const SizedBox.shrink());
+      await agaciSok(tester);
     });
   });
 
@@ -176,7 +184,7 @@ Future<void> main() async {
         findsOneWidget,
       );
 
-      await tester.pumpWidget(const SizedBox.shrink());
+      await agaciSok(tester);
     });
 
     testWidgets('manuel girişle abonelik veritabanına yazılır', (tester) async {
@@ -204,7 +212,7 @@ Future<void> main() async {
       expect(subscriptions.single.hizmetAdi, 'Yerel Spor Salonu');
       expect(subscriptions.single.bagliKartId, card.id);
 
-      await tester.pumpWidget(const SizedBox.shrink());
+      await agaciSok(tester);
     });
   });
 }
