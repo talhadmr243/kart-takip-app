@@ -30,6 +30,7 @@ class SettingsScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Ayarlar')),
       body: ListView(
+        padding: const EdgeInsets.all(16),
         children: [
           FutureBuilder<bool>(
             future: notificationService.bildirimIzniVarMi(),
@@ -38,7 +39,6 @@ class SettingsScreen extends StatelessWidget {
               if (izinVar) return const SizedBox.shrink();
               final colorScheme = Theme.of(context).colorScheme;
               return Card(
-                margin: const EdgeInsets.all(16),
                 color: colorScheme.errorContainer,
                 child: ListTile(
                   leading: Icon(
@@ -58,15 +58,21 @@ class SettingsScreen extends StatelessWidget {
               );
             },
           ),
-          ValueListenableBuilder<bool>(
-            valueListenable: settingsService.bildirimlerAcik,
-            builder: (context, acik, _) => SwitchListTile(
-              title: const Text('Bildirimler'),
-              subtitle: const Text(
-                'Kesim, aidat ve abonelik yenilenme hatırlatmaları',
+          Card(
+            child: ValueListenableBuilder<bool>(
+              valueListenable: settingsService.bildirimlerAcik,
+              builder: (context, acik, _) => SwitchListTile(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                secondary: const Icon(Icons.notifications_outlined),
+                title: const Text('Bildirimler'),
+                subtitle: const Text(
+                  'Kesim, aidat ve abonelik yenilenme hatırlatmaları',
+                ),
+                value: acik,
+                onChanged: _bildirimleriDegistir,
               ),
-              value: acik,
-              onChanged: _bildirimleriDegistir,
             ),
           ),
         ],

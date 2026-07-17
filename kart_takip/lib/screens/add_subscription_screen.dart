@@ -4,6 +4,7 @@ import '../data/database.dart';
 import '../data/popular_subscriptions.dart';
 import '../services/notification_service.dart';
 import '../services/settings_service.dart';
+import '../theme/app_theme.dart';
 
 class AddSubscriptionScreen extends StatefulWidget {
   const AddSubscriptionScreen({
@@ -189,6 +190,7 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
+                  style: AppTheme.para(context),
                   validator: (value) {
                     if (value == null || value.trim().isEmpty) {
                       return 'Tutar boş bırakılamaz';
@@ -240,7 +242,7 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                   subtitle: Text(
                     '${_baslangicTarihi.day}.${_baslangicTarihi.month}.${_baslangicTarihi.year}',
                   ),
-                  trailing: const Icon(Icons.calendar_today),
+                  trailing: const Icon(Icons.calendar_today_outlined),
                   onTap: _baslangicTarihiSec,
                 ),
                 const SizedBox(height: 24),

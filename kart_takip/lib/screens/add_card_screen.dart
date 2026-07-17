@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import '../data/database.dart';
 import '../services/notification_service.dart';
 import '../services/settings_service.dart';
+import '../theme/app_theme.dart';
 
 class AddCardScreen extends StatefulWidget {
   const AddCardScreen({
@@ -193,6 +194,7 @@ class _AddCardScreenState extends State<AddCardScreen> {
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
               ),
+              style: AppTheme.para(context),
               validator: _tutarValidator,
             ),
             const SizedBox(height: 16),
@@ -204,6 +206,7 @@ class _AddCardScreenState extends State<AddCardScreen> {
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
               ),
+              style: AppTheme.para(context),
               validator: (value) =>
                   _tutarValidator(value, zorunlu: false, sifirOlabilir: true),
             ),
@@ -216,7 +219,7 @@ class _AddCardScreenState extends State<AddCardScreen> {
                     ? 'Seçilmedi (opsiyonel)'
                     : '${_aidatTarihi!.day}.${_aidatTarihi!.month}.${_aidatTarihi!.year}',
               ),
-              trailing: const Icon(Icons.calendar_today),
+              trailing: const Icon(Icons.calendar_today_outlined),
               onTap: _aidatTarihiSec,
             ),
             const SizedBox(height: 24),
