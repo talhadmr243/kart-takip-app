@@ -51,6 +51,15 @@ class AppDatabase extends _$AppDatabase {
   @override
   int get schemaVersion => 1;
 
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+    beforeOpen: (details) async {
+      // Abonelikler karta cascade ile bağlı; SQLite'ta foreign key
+      // desteği bağlantı başına açıkça etkinleştirilmek zorunda.
+      await customStatement('PRAGMA foreign_keys = ON');
+    },
+  );
+
   // Cards
   Future<List<CardItem>> getAllCards() => select(cards).get();
   Stream<List<CardItem>> watchAllCards() => select(cards).watch();
@@ -64,6 +73,9 @@ class AppDatabase extends _$AppDatabase {
       select(subscriptions).get();
   Stream<List<Subscription>> watchAllSubscriptions() =>
       select(subscriptions).watch();
+  Future<List<Subscription>> getSubscriptionsForCard(int cardId) =>
+      (select(subscriptions)..where((tbl) => tbl.bagliKartId.equals(cardId)))
+          .get();
   Future<int> insertSubscription(SubscriptionsCompanion subscription) =>
       into(subscriptions).insert(subscription);
   Future<bool> updateSubscription(Subscription subscription) =>

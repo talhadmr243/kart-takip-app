@@ -3,16 +3,23 @@ import 'package:flutter/material.dart';
 import '../data/database.dart';
 import '../data/popular_subscriptions.dart';
 import '../services/notification_service.dart';
+import '../services/settings_service.dart';
 
 class AddSubscriptionScreen extends StatefulWidget {
   const AddSubscriptionScreen({
     super.key,
     required this.database,
     required this.notificationService,
+    required this.settingsService,
+    this.existing,
   });
 
   final AppDatabase database;
   final NotificationService notificationService;
+  final SettingsService settingsService;
+
+  /// Doluysa ekran düzenleme modunda çalışır ve bu kaydı günceller.
+  final Subscription? existing;
 
   @override
   State<AddSubscriptionScreen> createState() => _AddSubscriptionScreenState();
@@ -20,12 +27,24 @@ class AddSubscriptionScreen extends StatefulWidget {
 
 class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _hizmetAdiController = TextEditingController();
-  final _tutarController = TextEditingController();
-  DateTime _baslangicTarihi = DateTime.now();
-  SubscriptionPeriod _periyot = SubscriptionPeriod.aylik;
-  int? _seciliKartId;
-  bool _manuelGiris = false;
+  late final _hizmetAdiController = TextEditingController(
+    text: widget.existing?.hizmetAdi ?? '',
+  );
+  late final _tutarController = TextEditingController(
+    text: widget.existing == null
+        ? ''
+        : (widget.existing!.tutar == widget.existing!.tutar.roundToDouble()
+              ? widget.existing!.tutar.toStringAsFixed(0)
+              : widget.existing!.tutar.toString()),
+  );
+  late DateTime _baslangicTarihi =
+      widget.existing?.baslangicTarihi ?? DateTime.now();
+  late SubscriptionPeriod _periyot =
+      widget.existing?.periyot ?? SubscriptionPeriod.aylik;
+  late int? _seciliKartId = widget.existing?.bagliKartId;
+  late bool _manuelGiris =
+      widget.existing != null &&
+      !popularSubscriptionServices.contains(widget.existing!.hizmetAdi);
   bool _kaydediliyor = false;
 
   @override
@@ -54,26 +73,38 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
     try {
       final hizmetAdi = _hizmetAdiController.text.trim();
       final tutar = double.parse(_tutarController.text.replaceAll(',', '.'));
-      final id = await widget.database.insertSubscription(
-        SubscriptionsCompanion.insert(
-          hizmetAdi: hizmetAdi,
-          tutar: tutar,
-          bagliKartId: _seciliKartId!,
-          baslangicTarihi: _baslangicTarihi,
-          periyot: _periyot,
-        ),
+      final existing = widget.existing;
+      final int id;
+      if (existing == null) {
+        id = await widget.database.insertSubscription(
+          SubscriptionsCompanion.insert(
+            hizmetAdi: hizmetAdi,
+            tutar: tutar,
+            bagliKartId: _seciliKartId!,
+            baslangicTarihi: _baslangicTarihi,
+            periyot: _periyot,
+          ),
+        );
+      } else {
+        id = existing.id;
+      }
+      final subscription = Subscription(
+        id: id,
+        hizmetAdi: hizmetAdi,
+        tutar: tutar,
+        bagliKartId: _seciliKartId!,
+        baslangicTarihi: _baslangicTarihi,
+        periyot: _periyot,
       );
-      await widget.notificationService.scheduleForSubscription(
-        widget.database,
-        Subscription(
-          id: id,
-          hizmetAdi: hizmetAdi,
-          tutar: tutar,
-          bagliKartId: _seciliKartId!,
-          baslangicTarihi: _baslangicTarihi,
-          periyot: _periyot,
-        ),
-      );
+      if (existing != null) {
+        await widget.database.updateSubscription(subscription);
+      }
+      if (widget.settingsService.bildirimlerAcikMi) {
+        await widget.notificationService.scheduleForSubscription(
+          widget.database,
+          subscription,
+        );
+      }
       if (mounted) Navigator.of(context).pop();
     } finally {
       if (mounted) setState(() => _kaydediliyor = false);
@@ -83,7 +114,11 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Abonelik Ekle')),
+      appBar: AppBar(
+        title: Text(
+          widget.existing == null ? 'Abonelik Ekle' : 'Aboneliği Düzenle',
+        ),
+      ),
       body: StreamBuilder<List<CardItem>>(
         stream: widget.database.watchAllCards(),
         builder: (context, snapshot) {
@@ -119,7 +154,7 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                         .toList(),
                     validator: (value) =>
                         (value == null || value.isEmpty)
-                            ? 'Zorunlu alan'
+                            ? 'Bir hizmet seçin'
                             : null,
                     onChanged: (value) =>
                         setState(() => _hizmetAdiController.text = value ?? ''),
@@ -130,7 +165,7 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                     decoration: const InputDecoration(labelText: 'Hizmet Adı'),
                     validator: (value) =>
                         (value == null || value.trim().isEmpty)
-                            ? 'Zorunlu alan'
+                            ? 'Hizmet adı boş bırakılamaz'
                             : null,
                   ),
                 Align(
@@ -156,11 +191,15 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                   ),
                   validator: (value) {
                     if (value == null || value.trim().isEmpty) {
-                      return 'Zorunlu alan';
+                      return 'Tutar boş bırakılamaz';
                     }
-                    if (double.tryParse(value.replaceAll(',', '.')) == null) {
-                      return 'Geçerli bir sayı girin';
+                    final tutar = double.tryParse(
+                      value.trim().replaceAll(',', '.'),
+                    );
+                    if (tutar == null) {
+                      return 'Geçerli bir tutar girin (örn. 149,99)';
                     }
+                    if (tutar <= 0) return 'Tutar sıfırdan büyük olmalı';
                     return null;
                   },
                 ),
@@ -213,7 +252,7 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                           height: 20,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Text('Kaydet'),
+                      : Text(widget.existing == null ? 'Kaydet' : 'Güncelle'),
                 ),
               ],
             ),

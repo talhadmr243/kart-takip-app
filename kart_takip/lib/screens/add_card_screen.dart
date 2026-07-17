@@ -1,18 +1,26 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../data/database.dart';
 import '../services/notification_service.dart';
+import '../services/settings_service.dart';
 
 class AddCardScreen extends StatefulWidget {
   const AddCardScreen({
     super.key,
     required this.database,
     required this.notificationService,
+    required this.settingsService,
+    this.existing,
   });
 
   final AppDatabase database;
   final NotificationService notificationService;
+  final SettingsService settingsService;
+
+  /// Doluysa ekran düzenleme modunda çalışır ve bu kaydı günceller.
+  final CardItem? existing;
 
   @override
   State<AddCardScreen> createState() => _AddCardScreenState();
@@ -20,13 +28,31 @@ class AddCardScreen extends StatefulWidget {
 
 class _AddCardScreenState extends State<AddCardScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _bankaAdiController = TextEditingController();
-  final _kesimGunuController = TextEditingController();
-  final _sonOdemeGunuController = TextEditingController();
-  final _limitController = TextEditingController();
-  final _aidatTutariController = TextEditingController(text: '0');
-  DateTime? _aidatTarihi;
+  late final _bankaAdiController = TextEditingController(
+    text: widget.existing?.bankaAdi ?? '',
+  );
+  late final _kesimGunuController = TextEditingController(
+    text: widget.existing?.kesimGunu.toString() ?? '',
+  );
+  late final _sonOdemeGunuController = TextEditingController(
+    text: widget.existing?.sonOdemeGunu.toString() ?? '',
+  );
+  late final _limitController = TextEditingController(
+    text: widget.existing == null
+        ? ''
+        : _formatTutar(widget.existing!.limit),
+  );
+  late final _aidatTutariController = TextEditingController(
+    text: widget.existing == null
+        ? '0'
+        : _formatTutar(widget.existing!.aidatTutari),
+  );
+  late DateTime? _aidatTarihi = widget.existing?.aidatTarihi;
   bool _kaydediliyor = false;
+
+  static String _formatTutar(double tutar) => tutar == tutar.roundToDouble()
+      ? tutar.toStringAsFixed(0)
+      : tutar.toString();
 
   @override
   void dispose() {
@@ -58,28 +84,37 @@ class _AddCardScreenState extends State<AddCardScreen> {
       final aidatTutari =
           double.tryParse(_aidatTutariController.text.replaceAll(',', '.')) ??
           0;
-      final id = await widget.database.insertCard(
-        CardsCompanion.insert(
-          bankaAdi: _bankaAdiController.text.trim(),
-          kesimGunu: int.parse(_kesimGunuController.text),
-          sonOdemeGunu: int.parse(_sonOdemeGunuController.text),
-          limit: double.parse(_limitController.text.replaceAll(',', '.')),
-          aidatTutari: Value(aidatTutari),
-          aidatTarihi: Value(_aidatTarihi),
-        ),
+      final existing = widget.existing;
+      final int id;
+      if (existing == null) {
+        id = await widget.database.insertCard(
+          CardsCompanion.insert(
+            bankaAdi: _bankaAdiController.text.trim(),
+            kesimGunu: int.parse(_kesimGunuController.text),
+            sonOdemeGunu: int.parse(_sonOdemeGunuController.text),
+            limit: double.parse(_limitController.text.replaceAll(',', '.')),
+            aidatTutari: Value(aidatTutari),
+            aidatTarihi: Value(_aidatTarihi),
+          ),
+        );
+      } else {
+        id = existing.id;
+      }
+      final card = CardItem(
+        id: id,
+        bankaAdi: _bankaAdiController.text.trim(),
+        kesimGunu: int.parse(_kesimGunuController.text),
+        sonOdemeGunu: int.parse(_sonOdemeGunuController.text),
+        limit: double.parse(_limitController.text.replaceAll(',', '.')),
+        aidatTutari: aidatTutari,
+        aidatTarihi: _aidatTarihi,
       );
-      await widget.notificationService.scheduleForCard(
-        widget.database,
-        CardItem(
-          id: id,
-          bankaAdi: _bankaAdiController.text.trim(),
-          kesimGunu: int.parse(_kesimGunuController.text),
-          sonOdemeGunu: int.parse(_sonOdemeGunuController.text),
-          limit: double.parse(_limitController.text.replaceAll(',', '.')),
-          aidatTutari: aidatTutari,
-          aidatTarihi: _aidatTarihi,
-        ),
-      );
+      if (existing != null) {
+        await widget.database.updateCard(card);
+      }
+      if (widget.settingsService.bildirimlerAcikMi) {
+        await widget.notificationService.scheduleForCard(widget.database, card);
+      }
       if (mounted) Navigator.of(context).pop();
     } finally {
       if (mounted) setState(() => _kaydediliyor = false);
@@ -87,26 +122,38 @@ class _AddCardScreenState extends State<AddCardScreen> {
   }
 
   String? _gunValidator(String? value) {
-    if (value == null || value.trim().isEmpty) return 'Zorunlu alan';
-    final gun = int.tryParse(value);
-    if (gun == null || gun < 1 || gun > 31) return '1-31 arası bir gün girin';
+    if (value == null || value.trim().isEmpty) {
+      return 'Bu alan boş bırakılamaz';
+    }
+    final gun = int.tryParse(value.trim());
+    if (gun == null) return 'Sayı girin (örn. 15)';
+    if (gun < 1 || gun > 31) return 'Gün 1 ile 31 arasında olmalı';
     return null;
   }
 
-  String? _tutarValidator(String? value, {bool zorunlu = true}) {
+  /// [sifirOlabilir] true ise 0 kabul edilir (örn. aidatsız kart),
+  /// negatif tutar hiçbir durumda kabul edilmez.
+  String? _tutarValidator(
+    String? value, {
+    bool zorunlu = true,
+    bool sifirOlabilir = false,
+  }) {
     if (value == null || value.trim().isEmpty) {
-      return zorunlu ? 'Zorunlu alan' : null;
+      return zorunlu ? 'Bu alan boş bırakılamaz' : null;
     }
-    if (double.tryParse(value.replaceAll(',', '.')) == null) {
-      return 'Geçerli bir sayı girin';
-    }
+    final tutar = double.tryParse(value.trim().replaceAll(',', '.'));
+    if (tutar == null) return 'Geçerli bir tutar girin (örn. 149,99)';
+    if (tutar < 0) return 'Tutar negatif olamaz';
+    if (!sifirOlabilir && tutar == 0) return 'Tutar sıfırdan büyük olmalı';
     return null;
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Kart Ekle')),
+      appBar: AppBar(
+        title: Text(widget.existing == null ? 'Kart Ekle' : 'Kartı Düzenle'),
+      ),
       body: Form(
         key: _formKey,
         child: ListView(
@@ -116,7 +163,7 @@ class _AddCardScreenState extends State<AddCardScreen> {
               controller: _bankaAdiController,
               decoration: const InputDecoration(labelText: 'Banka Adı'),
               validator: (value) => (value == null || value.trim().isEmpty)
-                  ? 'Zorunlu alan'
+                  ? 'Banka adı boş bırakılamaz'
                   : null,
             ),
             const SizedBox(height: 16),
@@ -126,6 +173,7 @@ class _AddCardScreenState extends State<AddCardScreen> {
                 labelText: 'Kesim Günü (1-31)',
               ),
               keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               validator: _gunValidator,
             ),
             const SizedBox(height: 16),
@@ -135,6 +183,7 @@ class _AddCardScreenState extends State<AddCardScreen> {
                 labelText: 'Son Ödeme Günü (1-31)',
               ),
               keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               validator: _gunValidator,
             ),
             const SizedBox(height: 16),
@@ -155,7 +204,8 @@ class _AddCardScreenState extends State<AddCardScreen> {
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
               ),
-              validator: (value) => _tutarValidator(value, zorunlu: false),
+              validator: (value) =>
+                  _tutarValidator(value, zorunlu: false, sifirOlabilir: true),
             ),
             const SizedBox(height: 16),
             ListTile(
@@ -178,7 +228,7 @@ class _AddCardScreenState extends State<AddCardScreen> {
                       height: 20,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text('Kaydet'),
+                  : Text(widget.existing == null ? 'Kaydet' : 'Güncelle'),
             ),
           ],
         ),
