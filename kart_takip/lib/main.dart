@@ -7,6 +7,7 @@ import 'data/database.dart';
 import 'screens/home_screen.dart';
 import 'services/notification_service.dart';
 import 'services/settings_service.dart';
+import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -45,10 +46,8 @@ class KartTakipApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Kart Takip',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
-        useMaterial3: true,
-      ),
+      theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
       home: HomeScreen(
         database: database,
         notificationService: notificationService,

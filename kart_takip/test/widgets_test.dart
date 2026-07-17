@@ -32,11 +32,11 @@ Future<void> main() async {
   });
 
   // Drift, StreamBuilder aboneliği kapanırken sıfır süreli bir Timer
-  // zamanlar; testin bekleyen timer kontrolüne takılmaması için ağaç
-  // söküldükten sonra bir kare daha pump edilir.
+  // zamanlar; süresiz pump fake-async saatini ilerletmediği için timer'ın
+  // ateşlenmesi süreli bir pump gerektirir.
   Future<void> agaciSok(WidgetTester tester) async {
     await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
   }
 
   Future<CardItem> kartEkle({String bankaAdi = 'Test Bankası'}) async {

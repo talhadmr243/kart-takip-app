@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -5,6 +7,7 @@ import '../data/database.dart';
 import '../services/date_calculator_service.dart';
 import '../services/notification_service.dart';
 import '../services/settings_service.dart';
+import '../theme/app_theme.dart';
 import 'add_card_screen.dart';
 import 'add_subscription_screen.dart';
 import 'settings_screen.dart';
@@ -250,10 +253,36 @@ class _HomeContent extends StatelessWidget {
           (sum, item) => sum + item.subscription.tutar,
         );
 
+    final Widget ozetGorunumu;
+    if (upcomingKesimler.isEmpty) {
+      ozetGorunumu = _ToplamKarti(toplam: buAyToplam);
+    } else {
+      final sonrakiKesim = upcomingKesimler.first;
+      final kalanGun = sonrakiKesim.tarih
+          .difference(DateTime(now.year, now.month, now.day))
+          .inDays;
+      // Döngü uzunluğu için bir önceki kesim tarihi bulunur: sonraki
+      // kesimden 40 gün geriden bakınca aradaki tek kesim, önceki
+      // döngünün kesimidir.
+      final oncekiKesim = _dateCalculator.nextKesimTarihi(
+        sonrakiKesim.card.kesimGunu,
+        from: sonrakiKesim.tarih.subtract(const Duration(days: 40)),
+      );
+      final donguGun = sonrakiKesim.tarih.difference(oncekiKesim).inDays;
+      final oran = donguGun <= 0
+          ? 0.0
+          : ((donguGun - kalanGun) / donguGun).clamp(0.0, 1.0);
+      ozetGorunumu = _KesimHalkasi(
+        toplam: buAyToplam,
+        kalanGun: kalanGun,
+        oran: oran,
+      );
+    }
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        _SummaryCard(toplam: buAyToplam),
+        ozetGorunumu,
         const SizedBox(height: 24),
         const _SectionTitle('Yaklaşan Ekstreler'),
         if (upcomingKesimler.isEmpty)
@@ -310,12 +339,20 @@ class _EmptyState extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.credit_card_off_outlined,
-              size: 72,
-              color: colorScheme.outline,
+            Container(
+              width: 112,
+              height: 112,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: colorScheme.primary.withValues(alpha: 0.08),
+              ),
+              child: Icon(
+                Icons.credit_card_off_outlined,
+                size: 56,
+                color: colorScheme.primary,
+              ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
             Text(
               'Henüz kart veya abonelik eklenmedi',
               style: Theme.of(context).textTheme.titleMedium,
@@ -338,8 +375,120 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-class _SummaryCard extends StatelessWidget {
-  const _SummaryCard({required this.toplam});
+/// İmza öğesi: bir sonraki ekstre kesimine kalan süreyi gösteren dairesel
+/// ilerleme halkası. Halkanın dolu kısmı döngüde geçen süre oranıdır;
+/// ortada bu ayın toplamı (mono font), altında kalan gün yazar.
+class _KesimHalkasi extends StatelessWidget {
+  const _KesimHalkasi({
+    required this.toplam,
+    required this.kalanGun,
+    required this.oran,
+  });
+
+  final double toplam;
+  final int kalanGun;
+  final double oran;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final halkaRengi = kalanGun <= 3 ? colorScheme.error : colorScheme.primary;
+    final format = NumberFormat.currency(locale: 'tr_TR', symbol: '₺');
+    return Center(
+      child: SizedBox(
+        width: 240,
+        height: 240,
+        child: CustomPaint(
+          painter: _HalkaPainter(
+            oran: oran,
+            renk: halkaRengi,
+            izRengi: colorScheme.primary.withValues(alpha: 0.12),
+          ),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Bu Ay Toplam',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  format.format(toplam),
+                  style: AppTheme.para(
+                    context,
+                    fontSize: 26,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  kalanGun == 0 ? 'kesim bugün' : 'kesime $kalanGun gün',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: kalanGun <= 3
+                        ? colorScheme.error
+                        : colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HalkaPainter extends CustomPainter {
+  const _HalkaPainter({
+    required this.oran,
+    required this.renk,
+    required this.izRengi,
+  });
+
+  final double oran;
+  final Color renk;
+  final Color izRengi;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const kalinlik = 12.0;
+    final merkez = size.center(Offset.zero);
+    final yaricap = (size.shortestSide - kalinlik) / 2;
+
+    final iz = Paint()
+      ..color = izRengi
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = kalinlik;
+    canvas.drawCircle(merkez, yaricap, iz);
+
+    final yay = Paint()
+      ..color = renk
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = kalinlik
+      ..strokeCap = StrokeCap.round;
+    canvas.drawArc(
+      Rect.fromCircle(center: merkez, radius: yaricap),
+      -math.pi / 2,
+      2 * math.pi * oran,
+      false,
+      yay,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_HalkaPainter oldDelegate) =>
+      oldDelegate.oran != oran ||
+      oldDelegate.renk != renk ||
+      oldDelegate.izRengi != izRengi;
+}
+
+/// Hiç kart yokken (yalnızca abonelik varken) halka yerine gösterilen
+/// düz toplam kartı.
+class _ToplamKarti extends StatelessWidget {
+  const _ToplamKarti({required this.toplam});
 
   final double toplam;
 
@@ -347,7 +496,6 @@ class _SummaryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final format = NumberFormat.currency(locale: 'tr_TR', symbol: '₺');
     return Card(
-      color: Theme.of(context).colorScheme.primaryContainer,
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -357,9 +505,11 @@ class _SummaryCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               format.format(toplam),
-              style: Theme.of(
+              style: AppTheme.para(
                 context,
-              ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
+                fontSize: 26,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ],
         ),
@@ -469,15 +619,18 @@ class _KesimTile extends StatelessWidget {
     final kalanGun = tarih
         .difference(DateTime(today.year, today.month, today.day))
         .inDays;
+    final colorScheme = Theme.of(context).colorScheme;
     return Card(
       child: ListTile(
         onTap: onTap,
-        leading: const Icon(Icons.credit_card),
+        leading: const Icon(Icons.credit_card_outlined),
         title: Text(card.bankaAdi),
         subtitle: Text(DateFormat('d MMMM y', 'tr_TR').format(tarih)),
         trailing: Text(
           kalanGun == 0 ? 'Bugün' : '$kalanGun gün',
-          style: Theme.of(context).textTheme.labelLarge,
+          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+            color: kalanGun <= 3 ? colorScheme.error : colorScheme.primary,
+          ),
         ),
       ),
     );
@@ -501,10 +654,13 @@ class _YenilenmeTile extends StatelessWidget {
     return Card(
       child: ListTile(
         onTap: onTap,
-        leading: const Icon(Icons.subscriptions),
+        leading: const Icon(Icons.autorenew),
         title: Text(subscription.hizmetAdi),
         subtitle: Text(DateFormat('d MMMM y', 'tr_TR').format(tarih)),
-        trailing: Text(format.format(subscription.tutar)),
+        trailing: Text(
+          format.format(subscription.tutar),
+          style: AppTheme.para(context, fontSize: 14),
+        ),
       ),
     );
   }
