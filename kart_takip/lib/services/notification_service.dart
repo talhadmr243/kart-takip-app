@@ -55,6 +55,27 @@ class NotificationService {
         ?.requestPermissions(alert: true, badge: true, sound: true);
   }
 
+  /// Sistem tarafında bildirim izninin verilip verilmediğini sorgular.
+  /// Platform desteklenmiyorsa (örn. testler) izin var kabul edilir.
+  Future<bool> bildirimIzniVarMi() async {
+    final android = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+    if (android != null) {
+      return await android.areNotificationsEnabled() ?? true;
+    }
+    final ios = _plugin
+        .resolvePlatformSpecificImplementation<
+          IOSFlutterLocalNotificationsPlugin
+        >();
+    if (ios != null) {
+      final options = await ios.checkPermissions();
+      return options?.isEnabled ?? true;
+    }
+    return true;
+  }
+
   /// Uygulama açılışında tüm kartlar ve abonelikler için bildirimleri
   /// güncel tarihlere göre yeniden zamanlar.
   Future<void> rescheduleAll(AppDatabase database) async {
@@ -162,6 +183,9 @@ class NotificationService {
       );
     }
   }
+
+  /// Zamanlanmış tüm bildirimleri iptal eder (ayarlardan kapatıldığında).
+  Future<void> cancelAll() => _plugin.cancelAll();
 
   Future<void> cancelForCard(int cardId) async {
     await _plugin.cancel(_kesimNotificationId(cardId));

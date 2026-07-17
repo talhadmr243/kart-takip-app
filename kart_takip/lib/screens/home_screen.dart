@@ -4,18 +4,22 @@ import 'package:intl/intl.dart';
 import '../data/database.dart';
 import '../services/date_calculator_service.dart';
 import '../services/notification_service.dart';
+import '../services/settings_service.dart';
 import 'add_card_screen.dart';
 import 'add_subscription_screen.dart';
+import 'settings_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({
     super.key,
     required this.database,
     required this.notificationService,
+    required this.settingsService,
   });
 
   final AppDatabase database;
   final NotificationService notificationService;
+  final SettingsService settingsService;
 
   void _ekleMenusunuGoster(BuildContext context) {
     showModalBottomSheet<void>(
@@ -34,6 +38,7 @@ class HomeScreen extends StatelessWidget {
                     builder: (_) => AddCardScreen(
                       database: database,
                       notificationService: notificationService,
+                      settingsService: settingsService,
                     ),
                   ),
                 );
@@ -49,6 +54,7 @@ class HomeScreen extends StatelessWidget {
                     builder: (_) => AddSubscriptionScreen(
                       database: database,
                       notificationService: notificationService,
+                      settingsService: settingsService,
                     ),
                   ),
                 );
@@ -63,7 +69,24 @@ class HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Kart Takip')),
+      appBar: AppBar(
+        title: const Text('Kart Takip'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            tooltip: 'Ayarlar',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => SettingsScreen(
+                  database: database,
+                  notificationService: notificationService,
+                  settingsService: settingsService,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _ekleMenusunuGoster(context),
         icon: const Icon(Icons.add),
@@ -78,25 +101,100 @@ class HomeScreen extends StatelessWidget {
             builder: (context, subscriptionSnapshot) {
               final subscriptions =
                   subscriptionSnapshot.data ?? const <Subscription>[];
-              return _HomeContent(cards: cards, subscriptions: subscriptions);
+              return _HomeContent(
+                cards: cards,
+                subscriptions: subscriptions,
+                onEditCard: (card) => _kartDuzenle(context, card),
+                onDeleteCard: _kartSil,
+                onEditSubscription: (subscription) =>
+                    _abonelikDuzenle(context, subscription),
+                onDeleteSubscription: _abonelikSil,
+              );
             },
           );
         },
       ),
     );
   }
+
+  void _kartDuzenle(BuildContext context, CardItem card) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => AddCardScreen(
+          database: database,
+          notificationService: notificationService,
+          settingsService: settingsService,
+          existing: card,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _kartSil(CardItem card) async {
+    // Karta bağlı abonelikler cascade ile silineceği için önce onların
+    // zamanlanmış bildirimleri iptal edilir.
+    final bagliAbonelikler = await database.getSubscriptionsForCard(card.id);
+    for (final abonelik in bagliAbonelikler) {
+      await notificationService.cancelForSubscription(abonelik.id);
+      await database.deleteNotificationsFor(
+        abonelik.id,
+        NotificationType.yenilenme,
+      );
+    }
+    await notificationService.cancelForCard(card.id);
+    await database.deleteNotificationsFor(card.id, NotificationType.kesim);
+    await database.deleteNotificationsFor(card.id, NotificationType.aidat);
+    await database.deleteCard(card.id);
+  }
+
+  void _abonelikDuzenle(BuildContext context, Subscription subscription) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => AddSubscriptionScreen(
+          database: database,
+          notificationService: notificationService,
+          settingsService: settingsService,
+          existing: subscription,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _abonelikSil(Subscription subscription) async {
+    await notificationService.cancelForSubscription(subscription.id);
+    await database.deleteNotificationsFor(
+      subscription.id,
+      NotificationType.yenilenme,
+    );
+    await database.deleteSubscription(subscription.id);
+  }
 }
 
 class _HomeContent extends StatelessWidget {
-  _HomeContent({required this.cards, required this.subscriptions});
+  _HomeContent({
+    required this.cards,
+    required this.subscriptions,
+    required this.onEditCard,
+    required this.onDeleteCard,
+    required this.onEditSubscription,
+    required this.onDeleteSubscription,
+  });
 
   final List<CardItem> cards;
   final List<Subscription> subscriptions;
+  final void Function(CardItem) onEditCard;
+  final Future<void> Function(CardItem) onDeleteCard;
+  final void Function(Subscription) onEditSubscription;
+  final Future<void> Function(Subscription) onDeleteSubscription;
   final _dateCalculator = DateCalculatorService();
 
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
+
+    if (cards.isEmpty && subscriptions.isEmpty) {
+      return const _EmptyState();
+    }
 
     final upcomingKesimler =
         cards
@@ -159,20 +257,37 @@ class _HomeContent extends StatelessWidget {
         const SizedBox(height: 24),
         const _SectionTitle('Yaklaşan Ekstreler'),
         if (upcomingKesimler.isEmpty)
-          const _EmptyHint('Henüz kart eklenmedi.')
+          const _EmptyHint('Henüz kart eklenmedi. "Ekle" ile ilk kartını ekle.')
         else
           ...upcomingKesimler.map(
-            (item) => _KesimTile(card: item.card, tarih: item.tarih),
+            (item) => _DismissibleRow(
+              dismissKey: ValueKey('card_${item.card.id}'),
+              itemName: '${item.card.bankaAdi} kartı',
+              onDelete: () => onDeleteCard(item.card),
+              child: _KesimTile(
+                card: item.card,
+                tarih: item.tarih,
+                onTap: () => onEditCard(item.card),
+              ),
+            ),
           ),
         const SizedBox(height: 24),
         const _SectionTitle('Yaklaşan Abonelikler'),
         if (upcomingYenilenmeler.isEmpty)
-          const _EmptyHint('Henüz abonelik eklenmedi.')
+          const _EmptyHint(
+            'Henüz abonelik eklenmedi. "Ekle" ile ilk aboneliğini ekle.',
+          )
         else
           ...upcomingYenilenmeler.map(
-            (item) => _YenilenmeTile(
-              subscription: item.subscription,
-              tarih: item.tarih,
+            (item) => _DismissibleRow(
+              dismissKey: ValueKey('subscription_${item.subscription.id}'),
+              itemName: '${item.subscription.hizmetAdi} aboneliği',
+              onDelete: () => onDeleteSubscription(item.subscription),
+              child: _YenilenmeTile(
+                subscription: item.subscription,
+                tarih: item.tarih,
+                onTap: () => onEditSubscription(item.subscription),
+              ),
             ),
           ),
       ],
@@ -181,6 +296,46 @@ class _HomeContent extends StatelessWidget {
 
   bool _isSameMonth(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month;
+}
+
+class _EmptyState extends StatelessWidget {
+  const _EmptyState();
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.credit_card_off_outlined,
+              size: 72,
+              color: colorScheme.outline,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Henüz kart veya abonelik eklenmedi',
+              style: Theme.of(context).textTheme.titleMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Kartlarını ve aboneliklerini ekleyerek bu ay '
+              'kartından ne kadar çıkacağını tek bakışta gör. '
+              'Başlamak için aşağıdaki "Ekle" butonuna dokun.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _SummaryCard extends StatelessWidget {
@@ -246,11 +401,67 @@ class _EmptyHint extends StatelessWidget {
   }
 }
 
+/// Liste satırını kaydırarak silme davranışıyla sarar; silmeden önce
+/// onay diyaloğu gösterir.
+class _DismissibleRow extends StatelessWidget {
+  const _DismissibleRow({
+    required this.dismissKey,
+    required this.itemName,
+    required this.onDelete,
+    required this.child,
+  });
+
+  final Key dismissKey;
+  final String itemName;
+  final Future<void> Function() onDelete;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dismissible(
+      key: dismissKey,
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.errorContainer,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Icon(
+          Icons.delete_outline,
+          color: Theme.of(context).colorScheme.onErrorContainer,
+        ),
+      ),
+      confirmDismiss: (_) => showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Silinsin mi?'),
+          content: Text('$itemName silinecek. Bu işlem geri alınamaz.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Vazgeç'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Sil'),
+            ),
+          ],
+        ),
+      ),
+      onDismissed: (_) => onDelete(),
+      child: child,
+    );
+  }
+}
+
 class _KesimTile extends StatelessWidget {
-  const _KesimTile({required this.card, required this.tarih});
+  const _KesimTile({required this.card, required this.tarih, this.onTap});
 
   final CardItem card;
   final DateTime tarih;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -260,6 +471,7 @@ class _KesimTile extends StatelessWidget {
         .inDays;
     return Card(
       child: ListTile(
+        onTap: onTap,
         leading: const Icon(Icons.credit_card),
         title: Text(card.bankaAdi),
         subtitle: Text(DateFormat('d MMMM y', 'tr_TR').format(tarih)),
@@ -273,16 +485,22 @@ class _KesimTile extends StatelessWidget {
 }
 
 class _YenilenmeTile extends StatelessWidget {
-  const _YenilenmeTile({required this.subscription, required this.tarih});
+  const _YenilenmeTile({
+    required this.subscription,
+    required this.tarih,
+    this.onTap,
+  });
 
   final Subscription subscription;
   final DateTime tarih;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final format = NumberFormat.currency(locale: 'tr_TR', symbol: '₺');
     return Card(
       child: ListTile(
+        onTap: onTap,
         leading: const Icon(Icons.subscriptions),
         title: Text(subscription.hizmetAdi),
         subtitle: Text(DateFormat('d MMMM y', 'tr_TR').format(tarih)),
