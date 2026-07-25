@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../data/database.dart';
 import '../services/date_calculator_service.dart';
 import '../services/notification_service.dart';
+import '../services/premium_service.dart';
 import '../services/settings_service.dart';
 import '../theme/app_theme.dart';
 import 'add_card_screen.dart';
@@ -18,11 +19,13 @@ class HomeScreen extends StatelessWidget {
     required this.database,
     required this.notificationService,
     required this.settingsService,
+    required this.premiumService,
   });
 
   final AppDatabase database;
   final NotificationService notificationService;
   final SettingsService settingsService;
+  final PremiumService premiumService;
 
   void _ekleMenusunuGoster(BuildContext context) {
     showModalBottomSheet<void>(
@@ -84,6 +87,7 @@ class HomeScreen extends StatelessWidget {
                   database: database,
                   notificationService: notificationService,
                   settingsService: settingsService,
+                  premiumService: premiumService,
                 ),
               ),
             ),

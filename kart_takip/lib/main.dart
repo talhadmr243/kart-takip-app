@@ -6,6 +6,7 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'data/database.dart';
 import 'screens/home_screen.dart';
 import 'services/notification_service.dart';
+import 'services/premium_service.dart';
 import 'services/settings_service.dart';
 import 'theme/app_theme.dart';
 
@@ -15,6 +16,7 @@ Future<void> main() async {
 
   final database = AppDatabase();
   final settingsService = await SettingsService.load();
+  final premiumService = await PremiumService.load();
   final notificationService = NotificationService();
   await notificationService.init();
   if (settingsService.bildirimlerAcikMi) {
@@ -26,6 +28,7 @@ Future<void> main() async {
       database: database,
       notificationService: notificationService,
       settingsService: settingsService,
+      premiumService: premiumService,
     ),
   );
 }
@@ -36,11 +39,13 @@ class KartTakipApp extends StatelessWidget {
     required this.database,
     required this.notificationService,
     required this.settingsService,
+    required this.premiumService,
   });
 
   final AppDatabase database;
   final NotificationService notificationService;
   final SettingsService settingsService;
+  final PremiumService premiumService;
 
   @override
   Widget build(BuildContext context) {
@@ -52,6 +57,7 @@ class KartTakipApp extends StatelessWidget {
         database: database,
         notificationService: notificationService,
         settingsService: settingsService,
+        premiumService: premiumService,
       ),
     );
   }

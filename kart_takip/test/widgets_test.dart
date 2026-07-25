@@ -10,6 +10,7 @@ import 'package:kart_takip/main.dart';
 import 'package:kart_takip/screens/add_card_screen.dart';
 import 'package:kart_takip/screens/add_subscription_screen.dart';
 import 'package:kart_takip/services/notification_service.dart';
+import 'package:kart_takip/services/premium_service.dart';
 import 'package:kart_takip/services/settings_service.dart';
 
 Future<void> main() async {
@@ -17,6 +18,7 @@ Future<void> main() async {
 
   late AppDatabase database;
   late SettingsService settingsService;
+  late PremiumService premiumService;
   final notificationService = NotificationService();
 
   setUp(() async {
@@ -25,6 +27,8 @@ Future<void> main() async {
     // kapalı tutulur.
     SharedPreferences.setMockInitialValues({'bildirimler_acik': false});
     settingsService = await SettingsService.load();
+    // Sade constructor mağaza/platform kanalına dokunmaz; _init çağrılmaz.
+    premiumService = PremiumService(await SharedPreferences.getInstance());
   });
 
   tearDown(() async {
@@ -59,6 +63,7 @@ Future<void> main() async {
           database: database,
           notificationService: notificationService,
           settingsService: settingsService,
+          premiumService: premiumService,
         ),
       );
       await tester.pumpAndSettle();
@@ -80,6 +85,7 @@ Future<void> main() async {
           database: database,
           notificationService: notificationService,
           settingsService: settingsService,
+          premiumService: premiumService,
         ),
       );
       await tester.pumpAndSettle();
